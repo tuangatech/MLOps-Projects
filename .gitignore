@@ -1,0 +1,117 @@
+### General ###
+*.log
+*.pyc
+*.swp
+*.bak
+*.tmp
+*.DS_Store
+*~
+.idea/
+.vscode/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
+
+### Python ###
+# Byte-compiled / optimized files
+*.py[cod]
+*.so
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+venv*/
+.venv*/
+
+# Jupyter Notebooks
+# (Note: You might want to version control .ipynb files, but exclude outputs)
+*.ipynb_checkpoints
+
+### Data & Models ###
+# Local data files
+*.csv
+*.json
+*.parquet
+*.feather
+*.h5
+*.pkl
+*.pickle
+*.joblib
+*.model
+*.pt
+*.bin
+
+# Large datasets/artifacts
+data/
+datasets/
+artifacts/
+models/
+outputs/
+experiments/
+# Backup directories
+_backup/ 
+
+### Credentials & Secrets ###
+.env
+*.env
+secrets.ini
+*.key
+*.pem
+*.cert
+*.secret
+config.yml
+credentials.json
+aws_config.ini
+
+### Terraform & IaC ###
+# Local Terraform files
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.tfplan
+override.tf
+terraform.tfvars
+
+### Docker ###
+# Docker artifacts
+docker-compose.override.yml
+docker-compose.*.yml
+
+### CI/CD ###
+# CI/CD tool files
+.circleci/
+.github/
+.gitlab-ci.yml
+.azure-pipelines/
+.jenkins/
+
+### Logs & Build Artifacts ###
+logs/
+build/
+dist/
+*.exe
+*.out
+*.coverage
+*.prof
+*.manifest
+*.spec
+
+### OS-Specific ###
+# Linux
+*~
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
