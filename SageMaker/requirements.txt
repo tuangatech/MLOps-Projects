@@ -7,8 +7,11 @@ joblib>=1.2.0
 
 # NLP-Specific Libraries
 nltk>=3.8.0
-#transformers>=4.30.0
+transformers>=4.30.0
 
-# AWS and Server - for deployment and testing from local to SageMaker
-boto3>=1.28.0
-flask>=2.3.0
+# Web server
+flask>=2.3.0        # used in serve.py
+
+# Development and Testing from local to SageMaker
+# boto3>=1.28.0     # used in deploy_model.py
+# matplotlib        # used in test_concurrent.py

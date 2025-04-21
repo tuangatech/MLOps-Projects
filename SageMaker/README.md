@@ -52,7 +52,7 @@ There are two different `requirements.txt` files to consider in this solution â€
   - Add `flask` to serve as a lightweight web server at local.
 - Docker `requirements.txt` (included in the Docker container that will run on SageMaker):
   - Only list the packages required for **inference**.
-  - You do not need to include `torch` or `transformers` as we're using a base image `pytorch-inference:2.2.0-gpu`, since those libraries are already bundled.
+  - You do not need to include `torch` as we're using a base image `pytorch-inference:2.2.0-gpu`, since that library is already bundled.
 
 4. Create a Container Entry Point (`serve.py`)
 Implement a `serve.py` script as the containerâ€™s entry point. This script launches an HTTP server that handles:

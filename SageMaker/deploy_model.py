@@ -18,6 +18,7 @@ aws_region = boto3.session.Session().region_name
 model_name = "intent-detection-model"
 endpoint_config_name = "intent-detection-endpoint-config"
 endpoint_name = "intent-detection-endpoint"
+instance_type = "ml.m5.large"
 
 # Initialize clients
 sagemaker_client = boto3.client('sagemaker', region_name=aws_region)
@@ -29,6 +30,8 @@ sagemaker_client.create_model(
     PrimaryContainer={"Image": ecr_image_uri},
     ExecutionRoleArn=role_arn,
 )
+print(f"> Role ARN: {role_arn}")
+print(f"> ECR Image URI: {ecr_image_uri}")
 print("> Model created.")
 
 # Step 2: Create Endpoint Configuration
@@ -38,7 +41,7 @@ sagemaker_client.create_endpoint_config(
         {
             "VariantName": "AllTraffic",
             "ModelName": model_name,
-            "InstanceType": "ml.m5.large",
+            "InstanceType": instance_type,
             "InitialInstanceCount": 1,
         }
     ],
@@ -50,7 +53,7 @@ sagemaker_client.create_endpoint(
     EndpointName=endpoint_name,
     EndpointConfigName=endpoint_config_name,
 )
-print("> Endpoint creation started.")
+print(f"> Endpoint creation started on {instance_type} instance.")
 
 # Wait for endpoint to be ready
 while True:

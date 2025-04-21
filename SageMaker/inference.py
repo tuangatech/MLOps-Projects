@@ -69,7 +69,7 @@ def predict_fn(texts, artifacts):
     intents = []
     for text in texts:
         processed_text = preprocess_text(text)
-        logger.info(f"> Preprocessed from {text} -> {processed_text}")
+        # logger.info(f"> Preprocessed from {text} -> {processed_text}")
         # Tokenize input
         inputs = tokenizer(
             processed_text,
@@ -88,6 +88,7 @@ def predict_fn(texts, artifacts):
         
         intents.append(pred_label)
     
+    logger.debug(f"> Predicted intents: {intents}")
     return intents
 
 def output_fn(prediction, accept):

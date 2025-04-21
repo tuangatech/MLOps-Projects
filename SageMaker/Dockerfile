@@ -1,5 +1,3 @@
-# FROM pytorch/pytorch:1.13.1-cuda11.6-cudnn8-runtime
-# FROM 763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-inference:2.0.1-gpu-py310-cu118-ubuntu20.04-sagemaker
 FROM 763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-inference:2.2.0-gpu-py310-cu118-ubuntu20.04-sagemaker
 
 WORKDIR /opt/program
