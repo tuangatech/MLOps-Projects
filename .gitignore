@@ -54,7 +54,8 @@ models/
 outputs/
 experiments/
 # Backup directories
-_backup/ 
+_backup/
+*runs/
 
 ### Credentials & Secrets ###
 .env

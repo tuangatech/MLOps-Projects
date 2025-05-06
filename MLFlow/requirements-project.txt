@@ -1,0 +1,13 @@
+# General Purpose Libraries
+numpy
+pandas
+scikit-learn
+xgboost 
+
+matplotlib        
+mlflow
+fastapi
+uvicorn
+boto3
+pydantic
+python-dotenv
