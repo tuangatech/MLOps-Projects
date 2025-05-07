@@ -68,3 +68,8 @@ resource "aws_ecs_service" "fastapi_service" {
     aws_lb_listener.http
   ]
 }
+
+resource "aws_cloudwatch_log_group" "ecs_log_group" {
+  name = "/ecs/${var.project_name}"
+  retention_in_days = 7  # Optional: how long to keep logs
+}
