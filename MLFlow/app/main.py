@@ -1,7 +1,5 @@
 import os
 import logging
-import tempfile
-import boto3
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import mlflow.pyfunc
@@ -12,8 +10,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load environment variables + default values
-MODEL_BUCKET_NAME = os.getenv("MODEL_BUCKET_NAME", "s3-ttran-models")  # set in ECS.tf
-MODEL_PATH = os.getenv("MODEL_PATH", "mlflow/models/california-housing/5")
+MODEL_BUCKET_NAME = os.getenv("MODEL_BUCKET_NAME")  # set in ECS.tf
+MODEL_PATH = os.getenv("MODEL_PATH")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -24,25 +22,6 @@ app = FastAPI(
 
 # Global variable to hold model
 model = None
-
-@app.on_event("startup")
-def load_model():
-    global model
-    logger.info("Starting up and loading MLflow model...")
-
-    s3_client = boto3.client("s3")
-    temp_dir = "/tmp/model"
-
-    try:
-        logger.info(f"Loading model directly from s3://{MODEL_BUCKET_NAME}/{MODEL_PATH}")
-        
-        # Load directly from S3
-        model_uri = f"s3://{MODEL_BUCKET_NAME}/{MODEL_PATH}"
-        model = mlflow.pyfunc.load_model(model_uri)
-        logger.info("Model loaded successfully.")
-    except Exception as e:
-        logger.error(f"Failed to load model: {e}")
-        raise
 
 # Input schema
 class HousingData(BaseModel):
@@ -55,36 +34,22 @@ class HousingData(BaseModel):
     Latitude: float
     Longitude: float
 
-# Prediction endpoint
-@app.post("/predict")
-def predict(data: HousingData):
-    try:
-        print(f"Received data: {data}")
-        # Ensure the model is loaded   
-        if model is None:
-                raise HTTPException(status_code=500, detail="Model not loaded")
-        
-        input_df = pd.DataFrame([data.dict()])  # Convert to named-column DataFrame
-        prediction = model.predict(input_df)
-        return {"prediction": float(prediction[0])}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-# Health check endpoint
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
-
-@app.get("/ready")
-def readiness_check():
-    """Readiness probe: checks if model is loaded and usable"""
+@app.on_event("startup")
+def load_model():
     global model
-    logger.info("Running readiness check...")
-    
-    if model is None:
-        logger.error("Model not loaded")
-        raise HTTPException(status_code=503, detail="Model not loaded")
+    logger.info("Starting up and loading MLflow model...")
 
+    try:        
+        # Load directly from S3
+        model_uri = f"s3://{MODEL_BUCKET_NAME}/{MODEL_PATH}"
+        logger.info(f"Loading model directly from S3: {model_uri}")
+        model = mlflow.pyfunc.load_model(model_uri)
+        logger.info("Model loaded successfully.")
+    except Exception as e:
+        logger.error(f"Failed to load model: {e}")
+        raise
+    
     try:
         # Optional: run a quick inference test
         sample_input = pd.DataFrame([{
@@ -103,4 +68,32 @@ def readiness_check():
         logger.error(f"Model validation failed: {e}")
         raise HTTPException(status_code=503, detail=f"Model validation failed: {e}")
 
+
+# Prediction endpoint
+@app.post("/predict")
+def predict(data: HousingData):
+    try:
+        print(f"Received data: {data}")
+        # Ensure the model is loaded   
+        if model is None:
+            raise HTTPException(status_code=500, detail="Model not loaded")
+        
+        input_df = pd.DataFrame([data.dict()])  # Convert to named-column DataFrame
+        prediction = model.predict(input_df)
+        return {"prediction": float(prediction[0])}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Health check endpoint
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
+@app.get("/ready")
+def readiness_check():
+    print("Readiness check")  
+    # Perform deep health checks (e.g., DB, ML model)
+    if model is None:
+        logging.warning("Model not loaded")
+        raise HTTPException(status_code=503, detail="Dependencies not ready")
     return {"status": "ready"}
