@@ -12,6 +12,7 @@ resource "aws_lb" "main" {
 }
 
 # Define which ECS tasks receive traffic
+# Health checks ensure requests only go to healthy tasks.
 resource "aws_lb_target_group" "main" {
   name     = var.project_name
   port     = 80
@@ -21,7 +22,7 @@ resource "aws_lb_target_group" "main" {
 
   # Health check endpoint (should return HTTP 200)
   health_check {
-    path                = "/ready"      # Endpoint for readiness checks, replaced "/health"
+    path                = "/health"      # Endpoint for health checks
     healthy_threshold   = 3             # 3 successful checks = healthy
     unhealthy_threshold = 3             # 3 failed checks = unhealthy
     timeout             = 5             # Timeout per check (seconds)
