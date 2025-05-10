@@ -1,7 +1,7 @@
 # End-to-End ML Deployment with MLflow, FastAPI, and AWS Fargate
 In this project, I walk through how to train, track, and deploy a machine learning model using a modern MLOps stack — combining XGBoost, MLflow, FastAPI, and AWS ECS with Fargate. The goal is to build a regression model that predicts the median house value of a California block group based on features like income level, house age, number of rooms, and geographic location. I use XGBoost for its strong performance on tabular data and MLflow to track training runs, log metrics, and register the trained model for deployment. 
 
-Once the model is trained and registered in MLflow, I use FastAPI to create a simple web service that exposes a`/predict` endpoint for real-time inference. To deploy this service in a scalable and serverless way, I containerize the application with Docker and run it on AWS ECS Fargate, which handles infrastructure management without needing to provision EC2 instances. 
+Once the model is trained and registered in MLflow, I use FastAPI to create a simple web service that exposes a`/predict` endpoint for real-time inference. To deploy this service in a scalable and serverless way, I containerize the application with Docker and run it on AWS ECS with Fargate, which handles infrastructure management without needing to provision EC2 instances. 
 
 This end-to-end solution demonstrates a practical approach to deploying ML models in production with a clean, reproducible workflow. It’s particularly useful for developers and data scientists who want a minimal yet scalable setup without diving deep into Kubernetes or setting up custom inference servers.
 
@@ -14,7 +14,7 @@ In this project, we aim for a clean and scalable deployment of a machine learnin
 
 3. **FastAPI** is a better choice than Flask for serving ML models as it has built-in async support, which can handle multiple inference requests concurrently without blocking. That’s a big win if you're deploying in a production environment with real-time traffic. It also offers automatic input validation with Pydantic and auto-generates interactive API docs (Swagger). 
 
-4. I use **AWS ECS with Fargate** to deploy the FastAPI app. This setup lets me run containers in a serverless way — meaning we don’t have to manually provision or manage EC2 instances. Fargate only charges for the compute we actually use, which keeps costs down, and it supports features like auto-scaling (even though we’re not using that part yet). Our containers run inside a VPC and can assume IAM roles, so security and networking are well-contained.
+4. I use **AWS ECS with Fargate** to deploy the FastAPI app. This setup lets me run containers in a serverless way — meaning we don’t have to manually provision or manage EC2 instances (VMs). Fargate only charges for the compute we actually use, which keeps costs down, and it supports features like auto-scaling (even though we’re not using that part yet). Our containers run inside a VPC and can assume IAM roles, so security and networking are well-contained. 
 
 5. I use **Terraform** to setup AWS infrastructure which treats infrastructure as code. We can describe everything — VPCs, load balancers, ECS tasks, etc. — in configuration files, which can be committed to version control and reused across environments. It also makes deployments reproducible and easier to automate through CI/CD pipelines.
 
@@ -22,6 +22,7 @@ In this project, we aim for a clean and scalable deployment of a machine learnin
 - Security: VPC + IAM enforce least-privilege access.
 - Scalability: Fargate + ALB handle traffic spikes.
 - Cost-Efficiency: Pay only for running containers (Fargate).
+- ==== rollout and rollback easily ??
 
 ### Local Development
 The main purpose of this project is not about training a model so I pick a simple dataset of California housing value. Try to build a MLOps pipeline : Train → Evaluate → Log → Register → Store.
@@ -97,47 +98,57 @@ A bash script `build_push_docker.sh` is created to:
 - Build and tag a Docker image
 - Login Amazon ECR and push that Docker image to ECR.
 
-Actually, we need to have ECR repo created first (by terraforms in the next section), then we can push Docker image to ECR.
+Actually, we need to have ECR repo created first (by terraforms in the next section), then we can push the Docker image to ECR.
 
 
-### AWS Infrastructure Setup
+### AWS Infrastructure Setup (Terraform-based)
 
-1. `vpc.tf` – Virtual Private Cloud Setup
-This file sets up a secure networking environment where your FastAPI app will run. Even if your app is public-facing (via ALB), it should run inside a VPC for security, scalability, and compliance. It includes
+**1. `vpc.tf` – Virtual Private Cloud & Subnet Setup**
+
+Defines the core networking for your app. Even if your FastAPI app is public-facing, it still runs inside a VPC for security and scalability. This setup includes:
 - A VPC
-- Two public subnets (in different availability zones): two public subnets in two different Availability Zones (AZs) for high availability (HA) and fault tolerance. If us-east-1a fails, traffic automatically routes to us-east-1b (via a load balancer or redundant deployments). AWS guarantees AZs are physically isolated, so disasters (power outages, floods) won’t take down both. An ALB/NLB requires at least two subnets in different AZs to distribute traffic. Dev/test environments can use single subnet. For production, always use >= 2 AZs.
+- Two public subnets in different Availability Zones for high availability
 - An Internet Gateway
-- Public route table: A public route table is a set of rules (routes) that determine how traffic is directed from subnets to external networks (like the internet)
-- Subnet associations
+- A public route table and subnet associations
 
-2. `ecr.tf` – Elastic Container Registry
-This file creates an Amazon ECR repository where you'll push your FastAPI Docker image. You can think of ECR as a private Docker Hub, fully managed by AWS and integrated with IAM and ECS.
+Production should always span at least two AZs for failover and load balancing. ALBs require it.
 
-3. `iam.tf` – IAM Roles & Policies
-This file creates the IAM roles and policies needed to securely run your FastAPI app in ECS/Fargate. It includes:
-- An **execution role** (used by ECS to manage container lifecycle)
-- A **task role** (grants permissions to access S3 and CloudWatch)
+**2. `ecr.tf` – Docker Registry**
 
-4. `ecs.tf` – ECS Cluster, Task Definition, and Service
-This file sets up the container orchestration layer — where your FastAPI app runs. It includes:
-- ECS Cluster : Logical grouping of services/tasks
-- Task Definition : What container image to run and how much CPU/memory to allocate
-- Service : Keeps a desired number of tasks running and connects them to ALB
+This file creates an Amazon ECR repository where you'll push your FastAPI Docker image to, for ECS to pull and run. You can think of ECR as a private Docker Hub, fully managed by AWS and integrated with IAM and ECS.
 
-5. `alb.tf` – Application Load Balancer Setup
-- ALB : Public-facing entry point for your API
+**3. `iam.tf` – IAM Roles for ECS**
+
+Sets up roles and permissions:
+- Execution role for ECS to pull images and write logs
+- Task role for your app to access AWS services like S3 or CloudWatch
+
+**4. `ecs.tf` – ECS Cluster, Task Definition, Service (using Fargate)**
+
+This file sets up how your FastAPI app runs on AWS without managing servers. **ECS (Elastic Container Service)** is AWS's container orchestration platform — similar to Kubernetes, but AWS-managed. It takes care of running containers, scaling them, and keeping them healthy. **Fargate** is a serverless compute engine for containers. When you choose ECS with Fargate, you don’t have to launch or manage EC2 instances (VMs). You just define what your container needs (CPU, RAM), and AWS provisions and runs it behind the scenes. In short, ECS manages containers, Fargate runs them.
+
+Here's what the ecs.tf does:
+- ECS Cluster: A logical container for running tasks and services. It doesn’t cost anything by itself — just a grouping mechanism.
+- Task Definition defines which Docker image to run (from ECR), how much CPU/RAM to allocate, runtime settings like ports, environment variables, IAM roles, etc. I also specify the Fargate launch type here — telling ECS to use Fargate to run this task (not EC2).
+- Service keeps a specified number of task instances running. If a container crashes, the service spins up a replacement automatically.
+It also connects tasks to the Application Load Balancer (ALB), so incoming traffic can be distributed across running tasks.
+
+**5. `alb.tf` – Application Load Balancer Setup**
+
+Handles traffic routing:
+- ALB : Public entry point for your API
 - Target Group : Routes traffic to ECS tasks
-- HTTP Listener : Listens on port 80 and forwards to target group
-- Security Groups : Controls who can access the ALB and ECS tasks, 
+- HTTP Listener : Listens on port 80 and forwards traffic to target group
+- Security Groups : Controls who can access the ALB and ECS tasks
   - Allows internet traffic to reach the ALB on port 80.
   - Restricts ECS tasks to only accept traffic from the ALB (not directly from the internet)
-- How It All Works
-  - Client → Sends HTTP request to ALB’s public DNS name.
-  - ALB → Routes traffic to healthy ECS tasks (via target group).
-  - Target Group → Monitors ECS tasks via /health endpoint.
-  - Security Groups:
-    - ALB: Allows HTTP/80 from the internet.
-    - ECS: Only allows traffic from ALB (locked down).
+- How it all works
+  - Client sends HTTP request to ALB’s public DNS name.
+  - ALB routes traffic to healthy ECS tasks (via target group).
+  - Target Group monitors ECS tasks via `/health` endpoint, ping every minute. Health checks ensure requests only go to healthy tasks.
+
+**6. `variables.tf`**
+- model bucket, path to not hardcode
 
 
 ```bash
@@ -145,36 +156,69 @@ cd terraform
 terraform init
 terraform plan
 terraform apply
+terraform apply -auto-approve  # Applies all changes without asking for confirmation
 ```
 
 **Output**
-- alb_dns_name = "california-housing-api-1736015763.us-east-1.elb.amazonaws.com"
+- alb_dns_name = "california-housing-api-360463802.us-east-1.elb.amazonaws.com"
 - ecr_repository_url = "418272790285.dkr.ecr.us-east-1.amazonaws.com/california-housing-api"
-- ecs_task_definition = "arn:aws:ecs:us-east-1:418272790285:task-definition/california-housing-api:2"
+- ecs_task_definition = "arn:aws:ecs:us-east-1:418272790285:task-definition/california-housing-api:3"
 - ecs_task_role_arn = "arn:aws:iam::418272790285:role/california-housing-api-task-role"
 
---> http://california-housing-api-1736015763.us-east-1.elb.amazonaws.com/health
+--> http://california-housing-api-360463802.us-east-1.elb.amazonaws.com/health
 
-You can check CloudWatch to see logs like:
+You can check CloudWatch to see logs like below:
 
 ```
 INFO: Waiting for application startup.
 INFO:main:Starting up and loading MLflow model...
-INFO:main:Loading model directly from s3://s3-ttran-models/mlflow/models/california-housing/5
+INFO:main:Loading model directly from S3: s3://s3-ttran-models/mlflow/models/california-housing/5
 INFO:main:Model loaded successfully.
-INFO: Application startup complete.
-INFO:main:Running readiness check...
 INFO:main:Sample prediction: 5.093137741088867
+INFO: Application startup complete.
+INFO: 10.0.2.159:8986 - "GET /health HTTP/1.1" 200 OK
+INFO: 10.0.1.140:11060 - "GET /health HTTP/1.1" 200 OK
 ```
 
-ALB health check and Docker check internally.
+**ECS and ALB Health checks**
 
-You will see many logs for readiness check, that because every 30 seconds, Docker runs this command inside the container periodically to see if your app is healthy.
+I applied layered health check design
+- `GET /health` is lightweight — used by the ALB to check if the web server (FastAPI) is up.
+- `GET /ready` is deep — used by ECS task to determine if the app is functionally ready (e.g., model loaded, DB connection live).
+
+You will see many logs in CloudWatch about health check from both Docker and ALB. That because every 20 seconds, Docker and ALB runs health check (defined in FastAPI app `main.py`) to see if the app is healthy. If it takes 3 failures in a row (so at least 60 seocnds), the target will be marked unhealthy.
+
+**Build and Push a Docker image to AWS ECR**
+
+Add dependencies from MLFlow model to requirements.txt for Docker image, so the xgboost model can run in Docker container. Use `chmod +x` to make the script executable - we just need to run once.
+```bash
+chmod +x build_push_docker.sh 
+./build_push_docker.sh
+```
+
+**New deployment**
+
+- When you are in 2 situation below, you need to force deployment:
+  - Upload a new model version to S3. If using `latest` folder and Keep MODEL_PATH=`mlflow/models/california-housing/latest`
+  - Run build_push_docker.sh to push a new Docker image to ECR
 
 ```bash
-HEALTHCHECK --interval=30s --timeout=30s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:80/health || exit 1
+aws ecs update-service --cluster california-housing-api --service california-housing-api --force-new-deployment
+terraform output alb_dns_name
 ```
+
+- Rollback to a previous version: run this command to update the variable "model_path".
+
+```bash
+terraform apply -var "model_path=mlflow/models/california-housing/6"
+```
+
+What happens after running `terraform apply -var`
+- Terraform updates ECS task definition, ECS service will deploy new tasks with updated environment variables.
+- FastAPI app `main.py` reads the new `MODEL_PATH` from evn, load new model version from S3
+- No Docker image rebuild or code changes needed
+
+### Clean Up AWS
 
 **Free tier**
 - VPC, subnets, route tables
@@ -187,27 +231,14 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=10s --retries=3 \
 - ECS + Fargate
 - ALB
 
-
-**Build and Push a Docker image to AWS ECR**
-
-Add dependencies from MLFlow model to requirements.txt for Docker image, so the xgboost model can run in Docker container.
-Use chmod +x build_push_docker.sh to make the script executable, run once, gives execute permission to the owner of the file
-```bash
-chmod +x build_push_docker.sh 
-./build_push_docker.sh
-```
-
-### Clean Up AWS
-
+Delete the ECS service (which stops tasks too). Optional to delete the cluster
 
 ```bash
-# Delete the ECS service (which stops tasks too)
 aws ecs delete-service \
   --cluster california-housing-api \
   --service california-housing-api \
   --force
 
-# Delete the cluster
 aws ecs delete-cluster \
   --cluster california-housing-api
 ```
@@ -219,3 +250,23 @@ Delete the ALB: Go to EC2 > Load Balancers > Select and delete. It will delete A
 cd terraform
 terraform destroy
 ```
+
+### Reality
+
+Leave there for 30 minutes. Check CloudWatch, found many security scans sent to my application by automated tools trying to find vulnerabilities. As below, you can see that those tools were looking for exposed assets, they can also scan for common AWS misconfigurations.
+
+```
+INFO: 10.0.2.159:32278 - "GET /nice%20ports%2C/Trinity.txt.bak HTTP/1.1" 404 Not Found
+INFO: 10.0.2.159:44474 - "GET /hazelcast/rest/cluster HTTP/1.1" 404 Not Found
+INFO: 10.0.1.140:37784 - "GET /.git/HEAD HTTP/1.1" 404 Not Found
+INFO: 10.0.1.140:37784 - "GET /server/.env HTTP/1.1" 404 Not Found
+INFO: 10.0.1.140:37784 - "GET /server/config.php HTTP/1.1" 404 Not Found
+INFO: 10.0.1.140:37784 - "GET /server/info.php HTTP/1.1" 404 Not Found
+INFO: 10.0.1.140:37784 - "GET /server/settings.json HTTP/1.1" 404 Not Found
+INFO: 10.0.1.140:37784 - "GET /.aws/credentials HTTP/1.1" 404 Not Found
+INFO: 10.0.1.140:37784 - "GET /docker-compose.yml HTTP/1.1" 404 Not Found
+```
+Security best practices that can apply:
+Place ECS tasks and ALB in private subnets (not publicly routable) to reduce exposure to external threats. as we want to make the API externally accessible, we must assign the ALB a public IP while The ECS tasks must remain completely private. Since private subnets don’t have direct internet access to pull models from S3 or download packages, we need to configure a NAT Gateway in a public subnet.
+Restrict ALB Inbound and Outbound Traffic.
+Deploy AWS Web Application Firewall (WAF) in front of the ALB to filter by IP range or country.
