@@ -43,17 +43,29 @@ resource "aws_iam_role_policy" "s3_access" {
         "s3:ListBucket"
       ]
       Resource = [
-        "arn:aws:s3:::s3-ttran-models",                  # Bucket ARN
-        "arn:aws:s3:::s3-ttran-models/*"                 # All objects inside
+        "arn:aws:s3:::${var.model_bucket_name}",        # Bucket ARN
+        "arn:aws:s3:::${var.model_bucket_name}/*"       # All objects inside
       ]
     }]
   })
 }
 
 # Allow FastAPI app to write logs to CloudWatch
-resource "aws_iam_role_policy_attachment" "cloudwatch_logs" {
-  role       = aws_iam_role.ecs_task_role.name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
+resource "aws_iam_role_policy" "cloudwatch_logs_limited" {
+  name = "${var.project_name}-cloudwatch-limited"
+  role = aws_iam_role.ecs_task_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+      ]
+      Resource = "arn:aws:logs:${var.region}:*:log-group:/ecs/${var.project_name}:*"
+    }]
+  })
 }
 
 # Output the Role ARN
