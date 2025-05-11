@@ -8,47 +8,89 @@ This end-to-end solution demonstrates a practical approach to deploying ML model
 ### High-Level Approach
 In this project, we aim for a clean and scalable deployment of a machine learning model using tools and best practices below.
 
-1. The trained model will be downloaded from S3 bucket **at runtime** instead of baking it into the Docker image. Hence, updating the model becomes much simpler—you don’t have to rebuild or redeploy the Docker image every time there's a change. It also allows us to rollback easily, which is a big deal for production reliability. Since our XGBoost model is small (only around 7MB), the cold start impact from downloading it dynamically is negligible.
+1. The trained model will be downloaded from S3 bucket **at runtime** instead of baking it into the Docker image. Hence, updating the model becomes much simpler — I don’t have to rebuild or redeploy the Docker image every time there's a change. It also allows me to rollback easily, which is a big deal for production reliability. Since the XGBoost model is small (only around 7MB), the cold start impact from downloading it dynamically is small.
 
-2. We use **MLFlow** to keep track of our experiments and manage different model versions without relying on manual notes. It logs all the important details like training parameters, evaluation metrics, and generated artifacts (e.g., plots or confusion matrices). Additionally, MLFlow's model registry helps us manage model versions properly, and we know which one to roll forward or backward when needed.
+2. I use **MLFlow** to keep track of the experiments and manage different model versions without relying on manual notes. It logs all the important details like training parameters, evaluation metrics, and generated artifacts (e.g., plots or confusion matrices). Additionally, MLFlow's model registry helps us manage model versions properly, and I know which one to roll forward or backward when needed.
 
 3. **FastAPI** is a better choice than Flask for serving ML models as it has built-in async support, which can handle multiple inference requests concurrently without blocking. That’s a big win if you're deploying in a production environment with real-time traffic. It also offers automatic input validation with Pydantic and auto-generates interactive API docs (Swagger). 
 
-4. I use **AWS ECS with Fargate** to deploy the FastAPI app. This setup lets me run containers in a serverless way — meaning we don’t have to manually provision or manage EC2 instances (VMs). Fargate only charges for the compute we actually use, which keeps costs down, and it supports features like auto-scaling (even though we’re not using that part yet). Our containers run inside a VPC and can assume IAM roles, so security and networking are well-contained. 
+4. I use **AWS ECS with Fargate** to deploy the FastAPI app. This setup lets me run containers in a serverless way — meaning we don’t have to manually provision or manage EC2 instances (VMs). Fargate only charges for the compute we actually use, which keeps costs down, and it supports features like auto-scaling (even though we’re not using that part yet). The containers run inside a VPC and can assume IAM roles, so security and networking are good. 
 
 5. I use **Terraform** to setup AWS infrastructure which treats infrastructure as code. We can describe everything — VPCs, load balancers, ECS tasks, etc. — in configuration files, which can be committed to version control and reused across environments. It also makes deployments reproducible and easier to automate through CI/CD pipelines.
 
-**Why This Matters**
-- Security: VPC + IAM enforce least-privilege access.
-- Scalability: Fargate + ALB handle traffic spikes.
-- Cost-Efficiency: Pay only for running containers (Fargate).
-- ==== rollout and rollback easily ??
 
 ### Local Development
-The main purpose of this project is not about training a model so I pick a simple dataset of California housing value. Try to build a MLOps pipeline : Train → Evaluate → Log → Register → Store.
+The main purpose of this project is not about developing the best performance model - the goal is to build an end-to-end MLOps pipeline that goes from training to deployment. In this section, I use the California Housing dataset as a lightweight example to demonstrate the pipeline steps: Train → Evaluate → Log → Register → Store.
 
-1. XGBoost
-- Load the dataset from sklearn and filter out some outliers datapoints.
-- Tune hyperparameters of XGBRegressor using RandomSearchCV with 30 random combinations and 5-fold cross-validation.
+1. Model Training with XGBoost
+- Load the California housing dataset from `sklearn.datasets` and drop obvious outliers to clean the data.
+- Tune XGBRegressor hyperparameters using `RandomSearchCV` with 20 random combinations and 5-fold cross-validation for better generalization.
 - Finds the best hyperparameters that minimize prediction error
-- Evaluate the model on test data and Calculates RMSE and MAE (accuracy metrics)
+- Evaluate the model on test data and calculates RMSE and MAE (accuracy metrics)
 
-2. MLFlow
-- Log Everything with MLflow: best parameters, evaluation metrics, the trained model, feature importance plot, true vs predicted values plot
-- Register the best model in MLflow under the name "california-housing" for version control.
-- The best model is exported and uploaded to an Amazon S3 bucket for storage and later deployment in serving phase.
+```python
+model = xgb.XGBRegressor(random_state=42, objective='reg:squarederror')
 
-3. FastAPI app
-- This FastAPI app serves as a model inference API.
-- Get S3 bucket and path from environment variables that are set in Terraform for ECS deployment.
-- Loads the MLflow model directly from S3
-- Provide 3 endpoints:
-  - `GET /health`: Returns "healthy" if the app is running (liveness check)
-  - `GET /ready`: Checks if the model is loaded and working (readiness check). Also runs a sample prediction to validate functionality.
-  - `POST /predict`: Accepts housing data → returns predicted price using loaded model.
+param_dist = {
+    'n_estimators': [200, 300, 500],
+    'max_depth': [6, 8, 10, 12],
+    'learning_rate': [0.01, 0.05, 0.1, 0.2],
+    'subsample': [0.4, 0.6, 0.8, 1.0]
+}
+
+search = RandomizedSearchCV(
+    estimator=model,
+    param_distributions=param_dist,
+    n_iter=20, cv=5,            
+    scoring='neg_mean_squared_error',                      
+    n_jobs=-1, verbose=1, random_state=42)
+```
+
+2. Experiment Tracking with MLflow
+- MLflow is used to track all experiment artifacts: hyperparameters, metrics, trained model, and visualizations.
+- I log everything with MLflow: best parameters, the model artifacts, evaluation metrics (MAE, RMSE),  feature importance plot, true vs predicted values plot
+- Register the best model in MLflow with the name "california-housing" for version control.
+- Once registered, the production model is exported and uploaded to Amazon S3, ready for serving.
+- You can explore the experiment history using the MLflow UI by running `mlflow ui` on a Bash terminal and open http://localhost:5000/. From the UI, a developer can compare different runs and their parameters/metrics side by side and check training diagnostics and plots logged during training.
+
+```python
+mlflow.set_experiment(EXPERIMENT_NAME)
+input_example = X_train.head(5)  # Take first 5 rows as example input
+
+with mlflow.start_run() as run:
+    search.fit(X_train, y_train)
+    
+    best_params = search.best_params_
+    best_model = search.best_estimator_
+
+    # Predict and evaluate
+    y_pred = best_model.predict(X_test)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    mae = mean_absolute_error(y_test, y_pred)
+
+    # Log metrics and model
+    mlflow.log_params(best_params)
+    mlflow.log_metrics({"rmse": rmse, "mae": mae})
+    mlflow.xgboost.log_model(best_model, "model", input_example=input_example)
+
+    # Feature Importance Plot
+    fig1, ax1 = plt.subplots(figsize=(6, 5))
+    xgb.plot_importance(best_model, ax=ax1)
+    ax1.set_title("Feature Importance")
+    mlflow.log_figure(fig1, "plots/feature_importance.png")
+```
+
+3. Serving with FastAPI
+- A lightweight FastAPI app wraps the trained model into a RESTful inference service.
+- On startup, the app reads S3 bucket and path from environment variables (injected by ECS task definitions).
+- Loads the MLflow model directly from S3 using `mlflow.pyfunc.load_model()`.
+- The API exposes three endpoints:
+  - `GET /health`: Simple liveness check to confirm the app is running
+  - `GET /ready`: Verifies that the model is successfully loaded and ready to serve predictions
+  - `POST /predict`: Accepts housing feature input as JSON, runs inference, and returns predicted median house value using loaded model.
 
 ### Model Packaging
-1. Dockerize the FastAPI app
+**1. Dockerize the FastAPI app**
 - Build with the official slim Python 3.11 image
 - Copy requirements.txt first so Docker can cache this layer. If the dependencies don’t change, we skip reinstalling them every time.
 - Always use `--no-cache-dir` in production Dockerfiles, we have smaller image containing only installed packages.
@@ -56,7 +98,7 @@ The main purpose of this project is not about training a model so I pick a simpl
 - Tell Docker to check if the app is ready by hitting `/ready` every 30 seconds.
 - Run the FastAPI app using Uvicorn.
 
-2. Local Testing First
+**2. Local Testing First**
 
 Before deploying your FastAPI app in a Docker container or to production, always test it locally. This helps catch common issues early, such as:
 - Missing or incompatible dependencies
@@ -92,7 +134,7 @@ docker run -p 8000:80 my-fastapi-app
 
 Once again, we open browser and go to http://localhost:8000/ready and check the response. If this works, it means dependencies were installed properly and the app starts up successfully inside the container. Now, the image is ready to be uploaded to ECR.
 
-3. Build and Push Docker image to ECR
+**3. Build and Push Docker image to ECR**
 
 A bash script `build_push_docker.sh` is created to:
 - Build and tag a Docker image
@@ -151,6 +193,12 @@ Handles traffic routing:
 - model bucket, path to not hardcode
 
 
+**Why This Matters**
+- Security: VPC + IAM enforce least-privilege access.
+- Scalability: Fargate + ALB handle traffic spikes.
+- Cost-Efficiency: Pay only for running containers (Fargate).
+
+
 ```bash
 cd terraform
 terraform init
@@ -172,9 +220,9 @@ You can check CloudWatch to see logs like below:
 ```
 INFO: Waiting for application startup.
 INFO:main:Starting up and loading MLflow model...
-INFO:main:Loading model directly from S3: s3://s3-ttran-models/mlflow/models/california-housing/5
+INFO:main:Loading model directly from S3: s3://s3-ttran-models/mlflow/models/...
 INFO:main:Model loaded successfully.
-INFO:main:Sample prediction: 5.093137741088867
+INFO:main:Sample prediction: 5.093
 INFO: Application startup complete.
 INFO: 10.0.2.159:8986 - "GET /health HTTP/1.1" 200 OK
 INFO: 10.0.1.140:11060 - "GET /health HTTP/1.1" 200 OK
@@ -196,7 +244,9 @@ chmod +x build_push_docker.sh
 ./build_push_docker.sh
 ```
 
-**New deployment**
+### New Deployment
+
+1. Rollout new artifacts
 
 - When you are in 2 situation below, you need to force deployment:
   - Upload a new model version to S3. If using `latest` folder and Keep MODEL_PATH=`mlflow/models/california-housing/latest`
@@ -206,6 +256,8 @@ chmod +x build_push_docker.sh
 aws ecs update-service --cluster california-housing-api --service california-housing-api --force-new-deployment
 terraform output alb_dns_name
 ```
+
+2. Rollback
 
 - Rollback to a previous version: run this command to update the variable "model_path".
 
@@ -243,7 +295,7 @@ aws ecs delete-cluster \
   --cluster california-housing-api
 ```
 
-Delete the ALB: Go to EC2 > Load Balancers > Select and delete. It will delete ALB and associated resources (target groups, listener, security groups)
+Delete the ALB: Go to EC2 > Load Balancers > Select and delete. It will delete ALB and listeners which tied directly to the ALB.
 
 
 ```bash
@@ -251,7 +303,7 @@ cd terraform
 terraform destroy
 ```
 
-### Reality
+### What happens after the Go-Live?
 
 Leave there for 30 minutes. Check CloudWatch, found many security scans sent to my application by automated tools trying to find vulnerabilities. As below, you can see that those tools were looking for exposed assets, they can also scan for common AWS misconfigurations.
 
@@ -267,6 +319,6 @@ INFO: 10.0.1.140:37784 - "GET /.aws/credentials HTTP/1.1" 404 Not Found
 INFO: 10.0.1.140:37784 - "GET /docker-compose.yml HTTP/1.1" 404 Not Found
 ```
 Security best practices that can apply:
-Place ECS tasks and ALB in private subnets (not publicly routable) to reduce exposure to external threats. as we want to make the API externally accessible, we must assign the ALB a public IP while The ECS tasks must remain completely private. Since private subnets don’t have direct internet access to pull models from S3 or download packages, we need to configure a NAT Gateway in a public subnet.
-Restrict ALB Inbound and Outbound Traffic.
-Deploy AWS Web Application Firewall (WAF) in front of the ALB to filter by IP range or country.
+- Place ECS tasks and ALB in private subnets (not publicly routable) to reduce exposure to external threats. as we want to make the API externally accessible, we must assign the ALB a public IP while The ECS tasks must remain completely private. Since private subnets don’t have direct internet access to pull models from S3 or download packages, we need to configure a NAT Gateway in a public subnet.
+- Restrict ALB Inbound and Outbound Traffic.
+- Deploy AWS Web Application Firewall (WAF) in front of the ALB to filter by IP range or country.
