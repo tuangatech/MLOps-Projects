@@ -27,5 +27,5 @@ variable "model_bucket_name" {
 variable "model_path" {
   description = "Path to MLflow model inside the S3 bucket"
   type        = string
-  default     = "mlflow/models/california-housing/5"
+  default     = "mlflow/models/california-housing/latest"
 }
