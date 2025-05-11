@@ -29,7 +29,7 @@ resource "aws_ecs_task_definition" "fastapi_task" {
       },
       {
         name  = "MODEL_PATH"
-        value = var.model_path  # Path to model in S3, get by os.getenv("MODEL_PATH")
+        value = var.model_path  # Path to model in S3, defined in variables.tf, retrieved by os.getenv("MODEL_PATH")
       }
     ]
     logConfiguration = {
