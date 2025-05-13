@@ -91,9 +91,9 @@ def health_check():
 
 @app.get("/ready")
 def readiness_check():
-    print("Readiness check")  
+    logging.info("Readiness check")  
     # Perform deep health checks (e.g., DB, ML model)
     if model is None:
-        logging.warning("Model not loaded")
+        logging.error("Model not loaded")
         raise HTTPException(status_code=503, detail="Dependencies not ready")
     return {"status": "ready"}
