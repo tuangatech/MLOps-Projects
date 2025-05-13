@@ -22,6 +22,13 @@ resource "aws_ecs_task_definition" "fastapi_task" {
       hostPort    = 80
       protocol    = "tcp"
     }]
+    healthCheck = {
+      command      = ["CMD-SHELL", "curl -f http://localhost:80/ready || exit 1"]
+      interval     = 30
+      timeout      = 5
+      retries      = 3
+      startPeriod = 10
+    }
     environment = [
       {
         name  = "MODEL_BUCKET_NAME"
