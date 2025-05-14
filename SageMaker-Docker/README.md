@@ -2,7 +2,7 @@
 
 A lot of us start building ML models in Jupyter Notebooks - whether it's on Google Colab, Kaggle, or a local computer. It's a great setup for prototyping and testing ideas quickly. But if you want to turn that model into something people can actually use in the real world, you need to get it out of the notebook and into a proper production environment.
 
-In this article, I'll show you how I deployed an intent detection model (built with RoBERTa and PyTorch) to AWS using Docker and SageMaker. The goal is to turn that local model into a real-time API that's scalable, reliable, and ready for production. If you're looking to take your ML projects one step closer to production, this guide is for you.
+In this article, I'll show you how I deployed an [intent detection model](https://github.com/tuangatech/NLP-Projects/tree/main/Intent%20Detection%20w%20RoBERTa) (built with RoBERTa and PyTorch) to AWS using Docker and SageMaker. The goal is to turn that local model into a real-time API that's scalable, reliable, and ready for production. If you're looking to take your ML projects one step closer to production, this guide is for you.
 
 
 ### Solution Overview
